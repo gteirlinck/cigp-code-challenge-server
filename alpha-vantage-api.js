@@ -1,7 +1,7 @@
 require('request');
 const request = require('request-promise-native');
 
-const CACHING_DURATION_MS = 15000; // Alpha Vantage API guidelines limit the number of requests to no more than 5 per minute
+const CACHING_DURATION_MS = 30000; // Alpha Vantage API guidelines limit the number of requests to no more than 5 per minute
 
 const cachedSearchResults = [];
 
