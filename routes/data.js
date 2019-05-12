@@ -7,6 +7,7 @@ const request = require('request-promise-native');
 const CACHING_DURATION_MS = 3600000; // For testing only. Remove
 
 const latestQuotes = {};
+const latestTimeSeries = {};
 
 async function loadLatestQuote(symbol) {
   try {
@@ -46,22 +47,13 @@ async function loadLatestQuote(symbol) {
   }
 }
 
-router.get('/:symbol/latest', async (req, res, next) => {
+router.get('/:symbol/latest', async (req, res) => {
   const symbol = req.params['symbol'];
-
-  if (!symbol) {
-    res.statusCode = 400;
-    res.send('Missing symbol');
-    return;
-  }
 
   if (!latestQuotes[symbol]) {
     console.log(`New quote request: ${symbol}`);
     await loadLatestQuote(symbol);
-  } else if (
-    latestQuotes[symbol].timestamp <
-    Date.now() - CACHING_DURATION_MS
-  ) {
+  } else if (latestQuotes[symbol].timestamp < Date.now() - CACHING_DURATION_MS) {
     console.log(`Quote ${symbol} is expired. Refreshing`);
     latestQuotes[symbol] = undefined;
     await loadLatestQuote(symbol);
@@ -70,53 +62,56 @@ router.get('/:symbol/latest', async (req, res, next) => {
   if (latestQuotes[symbol]) {
     res.send(latestQuotes[symbol].quote);
   } else {
-    res.statusCode = 500;
-    res.send(error);
+    res.statusCode = 404;
+    res.send(`No quote available for ${symbol}`);
   }
 });
 
 async function getDailyTimeSeries(symbol) {
-  const result = await request({
-    uri: process.env.ALPHA_VANTAGE_ENDPOINT,
-    qs: {
-      function: 'TIME_SERIES_DAILY',
-      symbol: symbol.toUpperCase(),
-      apikey: process.env.ALPHA_VANTAGE_API_KEY
-    }
-  });
+  try {
+    const result = await request({
+      uri: process.env.ALPHA_VANTAGE_ENDPOINT,
+      qs: {
+        function: 'TIME_SERIES_DAILY',
+        symbol: symbol.toUpperCase(),
+        apikey: process.env.ALPHA_VANTAGE_API_KEY
+      }
+    });
 
-  const backward = Object.entries(
-    JSON.parse(result)['Time Series (Daily)']
-  ).map(kvp => {
-    return {
-      close: Number(kvp[1]['4. close']),
-      timestamp: new Date(kvp[0] + ' 16:00:00-0400'),
-      high: Number(kvp[1]['2. high']),
-      low: Number(kvp[1]['3. low']),
-      open: Number(kvp[1]['1. open']),
-      volume: Number(kvp[1]['5. volume'])
-    };
-  });
+    const backward = Object.entries(JSON.parse(result)['Time Series (Daily)']).map(kvp => {
+      return {
+        close: Number(kvp[1]['4. close']),
+        timestamp: new Date(kvp[0] + ' 16:00:00-0400'),
+        high: Number(kvp[1]['2. high']),
+        low: Number(kvp[1]['3. low']),
+        open: Number(kvp[1]['1. open']),
+        volume: Number(kvp[1]['5. volume'])
+      };
+    });
 
-  backward.reverse();
+    backward.reverse();
 
-  return backward;
+    return backward;
+  } catch (error) {
+    console.log(error);
+    return null;
+  }
 }
 
 async function getIntraDayTimeSeries(symbol) {
-  const result = await request({
-    uri: process.env.ALPHA_VANTAGE_ENDPOINT,
-    qs: {
-      function: 'TIME_SERIES_INTRADAY',
-      symbol: symbol.toUpperCase(),
-      apikey: process.env.ALPHA_VANTAGE_API_KEY,
-      interval: '1min',
-      outputsize: 'full'
-    }
-  });
+  try {
+    const result = await request({
+      uri: process.env.ALPHA_VANTAGE_ENDPOINT,
+      qs: {
+        function: 'TIME_SERIES_INTRADAY',
+        symbol: symbol.toUpperCase(),
+        apikey: process.env.ALPHA_VANTAGE_API_KEY,
+        interval: '1min',
+        outputsize: 'full'
+      }
+    });
 
-  const backward = Object.entries(JSON.parse(result)['Time Series (1min)']).map(
-    kvp => {
+    const backward = Object.entries(JSON.parse(result)['Time Series (1min)']).map(kvp => {
       return {
         close: Number(kvp[1]['4. close']),
         timestamp: new Date(kvp[0] + '-0400'),
@@ -125,37 +120,49 @@ async function getIntraDayTimeSeries(symbol) {
         open: Number(kvp[1]['1. open']),
         volume: Number(kvp[1]['5. volume'])
       };
-    }
-  );
+    });
 
-  backward.reverse();
+    backward.reverse();
 
-  return backward;
-}
-
-router.get('/:symbol/series', async (req, res, next) => {
-  const symbol = req.params['symbol'];
-
-  if (!symbol) {
-    res.statusCode = 400;
-    res.send('Missing symbol');
-    return;
-  }
-
-  try {
-    const dailyData = await getDailyTimeSeries(symbol);
-
-    const intradayData = await getIntraDayTimeSeries(symbol);
-
-    res.send(
-      dailyData
-        .filter(i => i.timestamp < intradayData[0].timestamp)
-        .concat(intradayData)
-    );
+    return backward;
   } catch (error) {
     console.log(error);
-    res.statusCode = 500;
-    res.send(error);
+    return null;
+  }
+}
+
+async function loadCombinedTimeSeries(symbol) {
+  const dailyData = await getDailyTimeSeries(symbol);
+
+  if (!dailyData) return null;
+
+  const intradayData = await getIntraDayTimeSeries(symbol);
+
+  if (!intradayData) return null;
+
+  latestTimeSeries[symbol] = {
+    series: dailyData.filter(i => i.timestamp < intradayData[0].timestamp).concat(intradayData),
+    timestamp: Date.now()
+  };
+}
+
+router.get('/:symbol/series', async (req, res) => {
+  const symbol = req.params['symbol'];
+
+  if (!latestTimeSeries[symbol]) {
+    console.log(`New time series request: ${symbol}`);
+    await loadCombinedTimeSeries(symbol);
+  } else if (latestTimeSeries[symbol].timestamp < Date.now() - CACHING_DURATION_MS) {
+    console.log(`Time series ${symbol} is expired. Refreshing`);
+    latestTimeSeries[symbol] = null;
+    await loadCombinedTimeSeries(symbol);
+  }
+
+  if (latestTimeSeries[symbol]) {
+    res.send(latestTimeSeries[symbol].series);
+  } else {
+    res.statusCode = 404;
+    res.send(`No time series available for ${symbol}`);
   }
 });
 
