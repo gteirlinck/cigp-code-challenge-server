@@ -7,6 +7,7 @@ const mongoose = require('mongoose');
 
 require('dotenv').config();
 
+mongoose.set('useFindAndModify', false);
 mongoose.connect(process.env.DB_CONNECTION_STRING, { useNewUrlParser: true });
 const db = mongoose.connection;
 
@@ -25,6 +26,9 @@ app.use('/api/search-symbol', searchSymbolRouter);
 
 const dataRouter = require('./routes/data');
 app.use('/api/data', dataRouter);
+
+const holdingsRouter = require('./routes/holdings');
+app.use('/api/holdings', holdingsRouter);
 
 const usersRouter = require('./routes/users');
 app.use('/users', usersRouter);

@@ -3,15 +3,12 @@ const router = express.Router();
 require('request');
 const request = require('request-promise-native');
 
-router.get('/:symbol/latest', async (req, res, next) => {
-  const symbol = req.params['symbol'];
+// const CACHING_DURATION_MS = 15000; // Alpha Vantage API guidelines limit the number of requests to no more than 5 per minute
+const CACHING_DURATION_MS = 3600000; // For testing only. Remove
 
-  if (!symbol) {
-    res.statusCode = 400;
-    res.send('Missing symbol');
-    return;
-  }
+const latestQuotes = {};
 
+async function loadLatestQuote(symbol) {
   try {
     const result = await request({
       uri: process.env.ALPHA_VANTAGE_ENDPOINT,
@@ -22,8 +19,13 @@ router.get('/:symbol/latest', async (req, res, next) => {
       }
     });
 
+    if (!result) return;
+
     const data = JSON.parse(result)['Global Quote'];
-    res.send({
+
+    if (!data) return;
+
+    const quote = {
       symbol: data['01. symbol'],
       open: Number(data['02. open']),
       high: Number(data['03. high']),
@@ -33,11 +35,43 @@ router.get('/:symbol/latest', async (req, res, next) => {
       latestTradingDay: new Date(data['07. latest trading day']),
       previousClose: Number(data['08. previous close']),
       change: Number(data['09. change']),
-      changePercent: Number(data['10. change percent'].replace('%', ''))
-    });
+      changePercent: Number(data['10. change percent'].replace('%', '')) / 100
+    };
+
+    if (!quote.symbol) return;
+
+    latestQuotes[symbol] = { quote, timestamp: Date.now() };
   } catch (error) {
     console.log(error);
-    res.statusCode = res.send(error);
+  }
+}
+
+router.get('/:symbol/latest', async (req, res, next) => {
+  const symbol = req.params['symbol'];
+
+  if (!symbol) {
+    res.statusCode = 400;
+    res.send('Missing symbol');
+    return;
+  }
+
+  if (!latestQuotes[symbol]) {
+    console.log(`New quote request: ${symbol}`);
+    await loadLatestQuote(symbol);
+  } else if (
+    latestQuotes[symbol].timestamp <
+    Date.now() - CACHING_DURATION_MS
+  ) {
+    console.log(`Quote ${symbol} is expired. Refreshing`);
+    latestQuotes[symbol] = undefined;
+    await loadLatestQuote(symbol);
+  }
+
+  if (latestQuotes[symbol]) {
+    res.send(latestQuotes[symbol].quote);
+  } else {
+    res.statusCode = 500;
+    res.send(error);
   }
 });
 
@@ -120,7 +154,8 @@ router.get('/:symbol/series', async (req, res, next) => {
     );
   } catch (error) {
     console.log(error);
-    res.statusCode = res.send(error);
+    res.statusCode = 500;
+    res.send(error);
   }
 });
 
