@@ -1,7 +1,5 @@
 const express = require('express');
 const cors = require('cors');
-const path = require('path');
-const cookieParser = require('cookie-parser');
 const logger = require('morgan');
 const mongoose = require('mongoose');
 
@@ -29,8 +27,5 @@ app.use('/api/data', dataRouter);
 
 const holdingsRouter = require('./routes/holdings');
 app.use('/api/holdings', holdingsRouter);
-
-const usersRouter = require('./routes/users');
-app.use('/users', usersRouter);
 
 module.exports = app;
