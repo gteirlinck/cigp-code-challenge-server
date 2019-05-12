@@ -1,9 +1,8 @@
 const express = require('express');
 const router = express.Router();
-require('request');
-const request = require('request-promise-native');
+const alphaVantageAPI = require('../alpha-vantage-api');
 
-router.get('/', async (req, res, next) => {
+router.get('/', async (req, res) => {
   const keyword = req.query['keyword'];
 
   if (!keyword) {
@@ -13,29 +12,18 @@ router.get('/', async (req, res, next) => {
   }
 
   try {
-    const result = await request({
-      uri: process.env.ALPHA_VANTAGE_ENDPOINT,
-      qs: {
-        function: 'SYMBOL_SEARCH',
-        keywords: keyword,
-        apikey: process.env.ALPHA_VANTAGE_API_KEY
-      }
-    });
+    const result = await alphaVantageAPI.getSearchResult(keyword);
 
-    const data = JSON.parse(result);
-
-    res.send(
-      data['bestMatches'].map(m => {
-        return {
-          symbol: m['1. symbol'],
-          name: m['2. name'],
-          type: m['3. type']
-        };
-      })
-    );
+    if (result) {
+      res.send(result);
+    } else {
+      res.statusCode = 404;
+      res.send(`No result for '${keyword}'`);
+    }
   } catch (error) {
     console.log(error);
-    res.statusCode = res.send(error);
+    res.statusCode = 500;
+    res.send(error);
   }
 });
 

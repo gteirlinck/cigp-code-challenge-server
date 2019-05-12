@@ -3,6 +3,8 @@ const request = require('request-promise-native');
 
 const CACHING_DURATION_MS = 15000; // Alpha Vantage API guidelines limit the number of requests to no more than 5 per minute
 
+const cachedSearchResults = [];
+
 const latestQuotes = {};
 const latestTimeSeries = {};
 
@@ -20,6 +22,62 @@ function throttleTimeSeriesRequests(result, symbol) {
   }
 
   return false;
+}
+
+async function sendSearchRequest(keyword) {
+  try {
+    const result = await request({
+      uri: process.env.ALPHA_VANTAGE_ENDPOINT,
+      qs: {
+        function: 'SYMBOL_SEARCH',
+        keywords: keyword,
+        apikey: process.env.ALPHA_VANTAGE_API_KEY
+      }
+    });
+
+    if (!result) throw new Error('No response received from AlphaVantage API');
+
+    const json = JSON.parse(result);
+
+    if (!json) throw new Error(`Unable to parse response from AlphaVantage API: ${result}`);
+
+    if (!json['bestMatches']) throw new Error(`No entry 'bestMatches' in json response: ${json}`);
+
+    return json['bestMatches'].map(m => {
+      return {
+        symbol: m['1. symbol'],
+        name: m['2. name'],
+        type: m['3. type']
+      };
+    });
+  } catch (error) {
+    console.log(error);
+    throw new Error(error);
+  }
+}
+
+async function getSearchResult(keyword) {
+  // 1. Try get from cache
+  const cached = cachedSearchResults.find(i => i.keyword === keyword);
+  if (cached) return cached.result;
+
+  // 2. Otherwise search
+  try {
+    const result = await sendSearchRequest(keyword);
+
+    if (result) {
+      cachedSearchResults.push({ keyword, result });
+
+      if (cachedSearchResults.length > 50) cachedSearchResults.shift();
+
+      return result;
+    }
+
+    return null;
+  } catch (error) {
+    console.log(error);
+    throw new Error(error);
+  }
 }
 
 async function loadLatestQuote(symbol) {
@@ -208,4 +266,4 @@ getLatestTimeSeries = async symbol => {
   return latestTimeSeries[symbol] ? latestTimeSeries[symbol].series : null;
 };
 
-module.exports = { getLatestQuote, getLatestTimeSeries };
+module.exports = { getLatestQuote, getLatestTimeSeries, getSearchResult };
