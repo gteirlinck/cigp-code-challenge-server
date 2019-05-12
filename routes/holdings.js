@@ -47,7 +47,8 @@ router.post('/', async (req, res) => {
 
     await holding.save();
 
-    res.sendStatus(201);
+    res.statusCode = 201;
+    res.send({});
   } catch (error) {
     sendError(res, error);
   }
@@ -64,11 +65,9 @@ router.put('/:userID/:symbol', async (req, res) => {
   }
 
   try {
-    await HoldingModel.findOneAndUpdate(
-      { userID, symbol },
-      { transactions: holdingToUpdate.transactions }
-    );
-    res.sendStatus(202);
+    await HoldingModel.findOneAndUpdate({ userID, symbol }, { transactions: holdingToUpdate.transactions });
+    res.statusCode = 202;
+    res.send({}); // Need to send an empty body as this is expected by the frontend Angular HTTP client (even though it doesn't correspond to HTTP protocol specs)
   } catch (error) {
     sendError(res, error);
   }
