@@ -1,14 +1,27 @@
 const express = require('express');
 const router = express.Router();
 const HoldingModel = require('../models/holding');
+const jwtCheck = require('../jwt-check');
+
+function readUserID(req, res) {
+  const userID = req.user.sub;
+
+  if (!userID) {
+    sendError(res, 'Missing body', 400);
+  }
+
+  return userID;
+}
 
 function sendError(res, error, statusCode = 500) {
   res.statusCode = statusCode;
   res.send(error);
 }
 
-router.get('/:userID/:symbol', async (req, res, next) => {
-  const userID = req.params['userID'];
+router.get('/:symbol', jwtCheck, async (req, res) => {
+  const userID = readUserID(req, res);
+  if (!userID) return;
+
   const symbol = req.params['symbol'];
 
   try {
@@ -19,8 +32,9 @@ router.get('/:userID/:symbol', async (req, res, next) => {
   }
 });
 
-router.get('/:userID', async (req, res) => {
-  const userID = req.params['userID'];
+router.get('/', jwtCheck, async (req, res) => {
+  const userID = readUserID(req, res);
+  if (!userID) return;
 
   try {
     const holdings = await HoldingModel.find({ userID });
@@ -30,7 +44,10 @@ router.get('/:userID', async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', jwtCheck, async (req, res) => {
+  const userID = readUserID(req, res);
+  if (!userID) return;
+
   const holdingToCreate = req.body;
 
   if (!holdingToCreate) {
@@ -40,7 +57,7 @@ router.post('/', async (req, res) => {
 
   try {
     const holding = new HoldingModel({
-      userID: holdingToCreate.userID,
+      userID,
       symbol: holdingToCreate.symbol,
       transactions: holdingToCreate.transactions
     });
@@ -54,14 +71,15 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.put('/:userID/:symbol', async (req, res) => {
-  const userID = req.params['userID'];
+router.put('/:symbol', jwtCheck, async (req, res) => {
+  const userID = readUserID(req, res);
+  if (!userID) return;
+
   const symbol = req.params['symbol'];
   const holdingToUpdate = req.body;
 
   if (!holdingToUpdate) {
     sendError(res, 'Missing body', 400);
-    return;
   }
 
   try {
