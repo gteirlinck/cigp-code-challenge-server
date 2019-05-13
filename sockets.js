@@ -19,7 +19,7 @@ const configureSockets = httpServer => {
 
     setInterval(async () => {
       await sendUpdates(socket, subscribedSymbol);
-    }, 15000);
+    }, 10000);
 
     socket.on('subscribe', async symbol => {
       subscribedSymbol = symbol;
@@ -36,6 +36,13 @@ const configureSockets = httpServer => {
       subscribedSymbol = symbols.to;
       await sendUpdates(socket, symbols.to);
       socket.emit('switchedSubscription', `Received your subscription switch from ${symbols.from} to ${symbols.to}`);
+    });
+
+    socket.on('disconnect', reason => {
+      if (subscribedSymbol) {
+        console.log(`Client disconnected: ${reason}. Cancelling subscription to ${subscribedSymbol}`);
+        subscribedSymbol = null;
+      }
     });
   });
 };

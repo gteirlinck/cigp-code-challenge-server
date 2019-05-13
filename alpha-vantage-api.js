@@ -1,7 +1,7 @@
 require('request');
 const request = require('request-promise-native');
 
-const CACHING_DURATION_MS = 30000; // Alpha Vantage API guidelines limit the number of requests to no more than 5 per minute
+const CACHING_DURATION_MS = 240000; // Alpha Vantage API guidelines limit the number of requests to no more than 5 per minute and 500 per day
 
 const cachedSearchResults = [];
 
@@ -41,7 +41,7 @@ async function sendSearchRequest(keyword) {
 
     if (!json) throw new Error(`Unable to parse response from AlphaVantage API: ${result}`);
 
-    if (!json['bestMatches']) throw new Error(`No entry 'bestMatches' in json response: ${json}`);
+    if (!json['bestMatches']) throw new Error(`No entry 'bestMatches' in response: ${result}`);
 
     return json['bestMatches'].map(m => {
       return {
